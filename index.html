@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyseur de Numéro de Sécurité Sociale</title>
+    <!-- Tailwind CSS pour un design moderne -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js pour le graphique interactif -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="max-w-2xl w-full bg-slate-800 rounded-2xl shadow-xl p-6 sm:p-8 border border-slate-700">
+        <h1 class="text-2xl sm:text-3xl font-bold text-center mb-2 text-indigo-400">Analyseur de Numéro de Sécu</h1>
+        <p class="text-slate-400 text-center mb-6 text-sm">Entrez un numéro de sécurité sociale à 15 chiffres pour découvrir les informations cachées et sa structure visuelle.</p>
+
+        <!-- Champ de saisie -->
+        <div class="mb-6">
+            <label for="nirInput" class="block text-sm font-medium text-slate-300 mb-2">Numéro de Sécurité Sociale :</label>
+            <div class="flex gap-2">
+                <input type="text" id="nirInput" maxlength="15" placeholder="Ex: 195122B01234567" 
+                    class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button onclick="analyserNIR()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-medium transition duration-200 shadow-lg shadow-indigo-600/30">
+                    Analyser
+                </button>
+            </div>
+            <p id="errorMsg" class="text-red-400 text-xs mt-2 hidden"></p>
+        </div>
+
+        <!-- Résultats textuels -->
+        <div id="results" class="hidden space-y-4 mb-8">
+            <h2 class="text-lg font-semibold text-indigo-300 border-b border-slate-700 pb-2">Informations décodées</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
+                    <span class="text-slate-400 block text-xs">Sexe :</span>
+                    <span id="resSexe" class="font-semibold text-white"></span>
+                </div>
+                <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
+                    <span class="text-slate-400 block text-xs">Date de naissance :</span>
+                    <span id="resDate" class="font-semibold text-white"></span>
+                </div>
+                <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
+                    <span class="text-slate-400 block text-xs">Lieu de naissance :</span>
+                    <span id="resLieu" class="font-semibold text-white"></span>
+                </div>
+                <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
+                    <span class="text-slate-400 block text-xs">Numéro d'ordre & Clé :</span>
+                    <span id="resOrdre" class="font-semibold text-white"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Graphique -->
+        <div id="chartContainer" class="hidden relative w-full h-64 bg-slate-900/40 p-4 rounded-xl border border-slate-700/50 flex items-center justify-center">
+            <canvas id="nirChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let myChart = null;
+
+        function analyserNIR() {
+            let nir = document.getElementById('nirInput').value.trim().toUpperCase();
+            const errorMsg = document.getElementById('errorMsg');
+            const resultsDiv = document.getElementById('results');
+            const chartContainer = document.getElementById('chartContainer');
+
+            // Nettoyage et vérification basique (15 caractères, accepte les lettres pour Corse 2A/2B)
+            errorMsg.classList.add('hidden');
+            
+            if (nir.length !== 15) {
+                errorMsg.textContent = "Le numéro de sécurité sociale doit comporter exactement 15 caractères.";
+                errorMsg.classList.remove('hidden');
+                resultsDiv.classList.add('hidden');
+                chartContainer.classList.add('hidden');
+                return;
+            }
+
+            // Extraction des blocs
+            const s = nir.substring(0, 1);
+            const aa = nir.substring(1, 3);
+            const mm = nir.substring(3, 5);
+            const dep = nir.substring(5, 7);
+            const com = nir.substring(7, 10);
+            const ordre = nir.substring(10, 13);
+            const cle = nir.substring(13, 15);
+
+            // 1. Sexe
+            let sexeTxt = "";
+            if (s === "1") sexeTxt = "Homme";
+            else if (s === "2") sexeTxt = "Femme";
+            else sexeTxt = "Autre / Particulier (" + s + ")";
+
+            // 2. Mois
+            let moisTxt = mm;
+            if (mm >= "01" && mm <= "12") {
+                const moisNoms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+                moisTxt = moisNoms[parseInt(mm, 10) - 1];
+            } else if (mm >= "20" && mm <= "30") {
+                moisTxt = "Né(e) en Algérie française (Mois : " + (parseInt(mm, 10) - 20) + ")";
+            } else if (mm >= "50" && mm <= "62") {
+                moisTxt = "Inconnu / Arrondi (Mois : " + (parseInt(mm, 10) - 50) + ")";
+            }
+
+            // 3. Année (Estimation siècle)
+            let anneeNum = parseInt(aa, 10);
+            // On suppose 1900 ou 2000 selon l'usage courant (simplifié ici au XXe/XXIe siècle)
+            let siecle = anneeNum > 30 ? "19" : "20"; 
+            let anneeComplete = siecle + aa;
+
+            // Affichage texte
+            document.getElementById('resSexe').textContent = sexeTxt;
+            document.getElementById('resDate').textContent = `${moisTxt} ${anneeComplete}`;
+            document.getElementById('resLieu').textContent = `Département : ${dep} - Commune : ${com}`;
+            document.getElementById('resOrdre').textContent = `Ordre : ${ordre} (Clé : ${cle})`;
+
+            resultsDiv.classList.remove('hidden');
+            chartContainer.classList.remove('hidden');
+
+            // Génération du graphique
+            genererGraphique([s, aa, mm, dep, com, ordre, cle]);
+        }
+
+        function genererGraphique(parties) {
+            const ctx = document.getElementById('nirChart').getContext('2d');
+
+            if (myChart) {
+                myChart.destroy();
+            }
+
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Sexe', 'Année', 'Mois', 'Département', 'Commune', 'Ordre', 'Clé'],
+                    datasets: [{
+                        label: 'Valeur des blocs du NIR',
+                        data: [
+                            parseInt(parties[0]), 
+                            parseInt(parties[1]), 
+                            parseInt(parties[2]), 
+                            parseInt(parties[3].replace('A','1').replace('B','2')), 
+                            parseInt(parties[4]), 
+                            parseInt(parties[5]), 
+                            parseInt(parties[6])
+                        ],
+                        backgroundColor: [
+                            'rgba(99, 102, 241, 0.7)',
+                            'rgba(168, 85, 247, 0.7)',
+                            'rgba(236, 72, 153, 0.7)',
+                            'rgba(59, 130, 246, 0.7)',
+                            'rgba(14, 165, 233, 0.7)',
+                            'rgba(20, 184, 166, 0.7)',
+                            'rgba(34, 197, 94, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgb(99, 102, 241)',
+                            'rgb(168, 85, 247)',
+                            'rgb(236, 72, 153)',
+                            'rgb(59, 130, 246)',
+                            'rgb(14, 165, 233)',
+                            'rgb(20, 184, 166)',
+                            'rgb(34, 197, 94)'
+                        ],
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let labelsExplicatives = [
+                                        "1: Homme, 2: Femme",
+                                        "Année de naissance",
+                                        "Mois de naissance",
+                                        "Numéro de département",
+                                        "Code commune INSEE",
+                                        "Numéro d'ordre d'inscription",
+                                        "Clé de contrôle (Modulo 97)"
+                                    ];
+                                    return ` Valeur: ${context.raw} — ${labelsExplicatives[context.dataIndex]}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#94a3b8' }
+                        },
+                        x: { 
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8' }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
